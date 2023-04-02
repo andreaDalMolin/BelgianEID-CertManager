@@ -11,11 +11,13 @@ public class Client {
         BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
 
-        out.println("hello world");
-        System.out.println("Sent message to server: hello world");
+        out.println("123");
+        System.out.println("Sent message to server: 123");
 
         String response = in.readLine();
         System.out.println("Received response from server: " + response);
+
+
 
         in.close();
         out.close();

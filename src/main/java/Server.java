@@ -3,7 +3,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 
 public class Server {
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws IOException, InterruptedException {
         int port = 5000;
         ServerSocket serverSocket = new ServerSocket(port);
         System.out.println("Server started on port " + port);
@@ -21,6 +21,12 @@ public class Server {
                 if (inputLine.equals("hello world")) {
                     out.println("hello to you");
                     break;
+                } else if (inputLine.equals("123")) {
+                    System.out.println("Fetching user data...");
+                    Thread.sleep(3000);
+                    out.println("Chiffrer(challenge)");
+                } else {
+                    System.out.println("MESSAGE WAS : " + inputLine);
                 }
             }
 
