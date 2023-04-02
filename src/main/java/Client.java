@@ -11,8 +11,7 @@ public class Client {
         BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
 
-        out.println("123");
-        System.out.println("Sent message to server: 123");
+        out.println("blob");
 
         String response = in.readLine();
         System.out.println("Received response from server: " + response);

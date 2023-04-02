@@ -1,9 +1,10 @@
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.security.interfaces.ECPublicKey;
 
 public class Server {
-    public static void main(String[] args) throws IOException, InterruptedException {
+    public static void main(String[] args) throws IOException, InterruptedException, ClassNotFoundException {
         int port = 5000;
         ServerSocket serverSocket = new ServerSocket(port);
         System.out.println("Server started on port " + port);
@@ -12,9 +13,14 @@ public class Server {
             Socket clientSocket = serverSocket.accept();
             System.out.println("Client connected from " + clientSocket.getInetAddress());
 
-            BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+            //BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
             PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true);
 
+            ObjectInputStream in = new ObjectInputStream(clientSocket.getInputStream());
+            ECPublicKey publicKey = (ECPublicKey) in.readObject();
+
+            System.out.println("Received public key: " + publicKey);
+            /**
             String inputLine;
             while ((inputLine = in.readLine()) != null) {
                 System.out.println("Received message from client: " + inputLine);
@@ -30,6 +36,7 @@ public class Server {
                 }
             }
 
+            **/
             in.close();
             out.close();
             clientSocket.close();
