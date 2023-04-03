@@ -123,64 +123,54 @@ public class CIKeystore
         // Connect to the server
         Socket socket = new Socket("localhost", 5000);
 
+        byte[] myKey = clePublique.getEncoded();
+        StringBuilder sb = new StringBuilder();
+
+        for (byte b : myKey) {
+            String hexString = String.format("%02x", b);
+            sb.append(hexString);
+        }
+
+        String result = sb.toString();
+        System.out.println("FULL KEY : " + result);
+        System.out.println("SHORT KEY : " + result.substring(46));
+
         // Send the client's public key to the server
         ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
-        out.writeObject(clePublique);
+        out.writeObject(result);
         out.flush();
 
         InputStream in = socket.getInputStream();
         ObjectInputStream objIn = new ObjectInputStream(in);
 
         Object obj = objIn.readObject();
+        String encrypted = (String) obj;
 
-        // Receive the server's public key
+        String stringToHash = "Hello, World!";
 
-        if (obj instanceof ECPublicKey bankPubKey) {
-            System.out.println("Received bank's public key: " + bankPubKey);
+        // Create a MessageDigest object for the SHA-256 algorithm
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
 
-            // 1. Generate the pre-master shared secret
-            KeyAgreement ka = KeyAgreement.getInstance("EC", "BC");
-            ka.init(clePrivee);
-            ka.doPhase(clePublique, true);
-            byte[] sharedSecret = ka.generateSecret();
+        // Compute the hash value of the string as a byte array
+        byte[] hashBytes = digest.digest(result.getBytes(StandardCharsets.UTF_8));
 
-            // 2. (Optional) Hash the shared secret.
-            // 		Alternatively, you don't need to hash it.
-            MessageDigest messageDigest = MessageDigest.getInstance("SHA-256");
-            messageDigest.update(sharedSecret);
-            byte[] digest = messageDigest.digest();
+        // Use the first 16 bytes of the hash as the key for AES decryption
+        byte[] keyBytes = Arrays.copyOf(hashBytes, 16);
+        SecretKeySpec key = new SecretKeySpec(keyBytes, "AES");
 
-            // 3. (Optional) Split up hashed shared secret into an initialization vector and a session key
-            // 		Alternatively, you can just use the shared secret as the session key and not use an iv.
-            int digestLength = digest.length;
-            byte[] iv = Arrays.copyOfRange(digest, 0, (digestLength + 1)/2);
-            byte[] sessionKey = Arrays.copyOfRange(digest, (digestLength + 1)/2, digestLength);
+        // Create a cipher object for AES decryption
+        Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
+        cipher.init(Cipher.DECRYPT_MODE, key);
 
-            // 4. Create a secret key from the session key and initialize a cipher with the secret key
-            SecretKey secretKey = new SecretKeySpec(sessionKey, 0, sessionKey.length, "AES");
-            Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding", "BC");
-            IvParameterSpec ivSpec = new IvParameterSpec(iv);
-            cipher.init(Cipher.DECRYPT_MODE, secretKey, ivSpec);
+        // Decrypt the ciphertext message with AES
+        byte[] plaintextBytes = cipher.doFinal(Base64.getDecoder().decode(encrypted));
+        String plaintext = new String(plaintextBytes, StandardCharsets.UTF_8);
 
+        // Print the plaintext message
+        System.out.println("Plaintext: " + plaintext);
 
-
-            // 5. Encrypt whatever message you want to send
-//            String decryptMe = cipherString; // Message received from Party A
-//            byte[] decryptMeBytes = Base64.getDecoder().decode(decryptMe);
-//            byte[] textBytes = cipher.doFinal(decryptMeBytes);
-//            String originalText = new String(textBytes);
-
-        }  else if (obj instanceof String str) {
-            System.out.println("Received string: " + str);
-        }
-
-//        ObjectInputStream in = new ObjectInputStream(socket.getInputStream());
-//        byte[] serverPublicKeyBytes = (byte[]) in.readObject();
-//        X509EncodedKeySpec ks = new X509EncodedKeySpec(serverPublicKeyBytes);
-//        KeyFactory kf = KeyFactory.getInstance("EC");
-//        ECPublicKey serverPublicKey = (ECPublicKey) kf.generatePublic(ks);
-
-
+        // Print the plaintext message
+        System.out.println("Plaintext: " + plaintext);
 
         // Clean up
         in.close();
