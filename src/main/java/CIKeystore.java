@@ -3,10 +3,7 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import javax.crypto.*;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
+import java.io.*;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.security.*;
@@ -26,12 +23,13 @@ public class CIKeystore
 {
     private static ByteArrayInputStream bais = new ByteArrayInputStream
             ("name = beid\nlibrary = c:\\WINDOWS\\system32\\beidpkcs11.dll".getBytes());
-    private static final String aliasClesSignatureKeystore = "Signature";
+    private static final String aliasClesSignatureKeystore = "Authentication";
     // L'alias s'appelle obligatoirement ainsi !
     public static void main(String[] args)
     {
 
         Security.setProperty("crypto.policy", "unlimited");
+        Security.addProvider(new BouncyCastleProvider());
 
         //Le chemin de configuration du PKCS11
         String configName = "C:\\tmp\\pkcs11.cfg";
@@ -65,6 +63,7 @@ public class CIKeystore
             sVerif.initVerify(clePublique);
             sVerif.update(message.getBytes());
             boolean signatureValide = sVerif.verify(signature);
+
             /**System.out.println("*** Signature générée pour '" + message + "' = "+
                     new String(signature)+" ***");
             if(signatureValide)System.out.println("*** La signature est valide ***");
@@ -85,66 +84,7 @@ public class CIKeystore
             System.out.println("SHORT KEY : " + result.substring(46));
 **/
 
-            // Connect to the server
-            Socket socket = new Socket("localhost", 5000);
-
-            // Generate the client's key pair
-            /**KeyPairGenerator keyGen = KeyPairGenerator.getInstance("EC");
-            ECGenParameterSpec ecSpec = new ECGenParameterSpec("secp384r1");
-            keyGen.initialize(ecSpec);
-            KeyPair keyPair = keyGen.generateKeyPair();
-            ECPublicKey publicKey = (ECPublicKey) keyPair.getPublic();
-            ECPrivateKey privateKey = (ECPrivateKey) keyPair.getPrivate();**/
-
-            // Send the client's public key to the server
-            ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
-            out.writeObject(clePublique);
-            out.flush();
-
-            // Receive the server's public key
-            ObjectInputStream in = new ObjectInputStream(socket.getInputStream());
-            byte[] serverPublicKeyBytes = (byte[]) in.readObject();
-            X509EncodedKeySpec ks = new X509EncodedKeySpec(serverPublicKeyBytes);
-            KeyFactory kf = KeyFactory.getInstance("EC");
-            ECPublicKey serverPublicKey = (ECPublicKey) kf.generatePublic(ks);
-
-            // Generate the shared secret using the client's private key and the server's public key
-            KeyAgreement ka = KeyAgreement.getInstance("ECDH");
-            ka.init(clePrivee);
-            ka.doPhase(serverPublicKey, true);
-            byte[] sharedSecret = ka.generateSecret();
-
-            // Hash the shared secret using SHA-256
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(sharedSecret);
-
-            // Split the hash into an initialization vector and a session key
-            byte[] iv = Arrays.copyOfRange(hash, 0, 16);
-            byte[] sessionKey = Arrays.copyOfRange(hash, 16, 32);
-
-            // Create a secret key from the session key and initialize a cipher with the secret key
-            SecretKey secretKey = new SecretKeySpec(sessionKey, "AES");
-            Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-            IvParameterSpec ivSpec = new IvParameterSpec(iv);
-            cipher.init(Cipher.ENCRYPT_MODE, secretKey, ivSpec);
-
-            // Send an encrypted message to the server
-            String myMessage = "Hello, server!";
-            byte[] encryptedMessage = cipher.doFinal(myMessage.getBytes(StandardCharsets.UTF_8));
-            out.writeObject(encryptedMessage);
-            out.flush();
-
-            // Receive and decrypt a message from the server
-            byte[] encryptedResponse = (byte[]) in.readObject();
-            cipher.init(Cipher.DECRYPT_MODE, secretKey, ivSpec);
-            byte[] decryptedResponse = cipher.doFinal(encryptedResponse);
-            String response = new String(decryptedResponse, StandardCharsets.UTF_8);
-            System.out.println("Server said: " + response);
-
-            // Clean up
-            in.close();
-            out.close();
-            socket.close();
+            extracted(clePrivee, clePublique);
 
         }
         catch (KeyStoreException ex) {
@@ -178,5 +118,76 @@ public class CIKeystore
             throw new RuntimeException(e);
         }
     }
+
+    private static void extracted(PrivateKey clePrivee, PublicKey clePublique) throws IOException, ClassNotFoundException, NoSuchAlgorithmException, InvalidKeySpecException, InvalidKeyException, NoSuchPaddingException, InvalidAlgorithmParameterException, IllegalBlockSizeException, BadPaddingException, NoSuchProviderException {
+        // Connect to the server
+        Socket socket = new Socket("localhost", 5000);
+
+        // Send the client's public key to the server
+        ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
+        out.writeObject(clePublique);
+        out.flush();
+
+        InputStream in = socket.getInputStream();
+        ObjectInputStream objIn = new ObjectInputStream(in);
+
+        Object obj = objIn.readObject();
+
+        // Receive the server's public key
+
+        if (obj instanceof ECPublicKey bankPubKey) {
+            System.out.println("Received bank's public key: " + bankPubKey);
+
+            // 1. Generate the pre-master shared secret
+            KeyAgreement ka = KeyAgreement.getInstance("EC", "BC");
+            ka.init(clePrivee);
+            ka.doPhase(clePublique, true);
+            byte[] sharedSecret = ka.generateSecret();
+
+            // 2. (Optional) Hash the shared secret.
+            // 		Alternatively, you don't need to hash it.
+            MessageDigest messageDigest = MessageDigest.getInstance("SHA-256");
+            messageDigest.update(sharedSecret);
+            byte[] digest = messageDigest.digest();
+
+            // 3. (Optional) Split up hashed shared secret into an initialization vector and a session key
+            // 		Alternatively, you can just use the shared secret as the session key and not use an iv.
+            int digestLength = digest.length;
+            byte[] iv = Arrays.copyOfRange(digest, 0, (digestLength + 1)/2);
+            byte[] sessionKey = Arrays.copyOfRange(digest, (digestLength + 1)/2, digestLength);
+
+            // 4. Create a secret key from the session key and initialize a cipher with the secret key
+            SecretKey secretKey = new SecretKeySpec(sessionKey, 0, sessionKey.length, "AES");
+            Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding", "BC");
+            IvParameterSpec ivSpec = new IvParameterSpec(iv);
+            cipher.init(Cipher.DECRYPT_MODE, secretKey, ivSpec);
+
+
+
+            // 5. Encrypt whatever message you want to send
+//            String decryptMe = cipherString; // Message received from Party A
+//            byte[] decryptMeBytes = Base64.getDecoder().decode(decryptMe);
+//            byte[] textBytes = cipher.doFinal(decryptMeBytes);
+//            String originalText = new String(textBytes);
+
+        }  else if (obj instanceof String str) {
+            System.out.println("Received string: " + str);
+        }
+
+//        ObjectInputStream in = new ObjectInputStream(socket.getInputStream());
+//        byte[] serverPublicKeyBytes = (byte[]) in.readObject();
+//        X509EncodedKeySpec ks = new X509EncodedKeySpec(serverPublicKeyBytes);
+//        KeyFactory kf = KeyFactory.getInstance("EC");
+//        ECPublicKey serverPublicKey = (ECPublicKey) kf.generatePublic(ks);
+
+
+
+        // Clean up
+        in.close();
+        out.close();
+        socket.close();
+    }
+
+
 }
 
