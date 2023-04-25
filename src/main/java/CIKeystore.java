@@ -17,7 +17,8 @@ import java.util.Base64;
 public class CIKeystore
 {
     // Choose your certificate here !
-    private static final String aliasClesSignatureKeystore = "Authentication";
+    private static final String aliasClesAuthKeystore = "Authentication";
+    private static final String aliasClesSignKeystore = "Signature";
     private static final int SERVER_PORT = 5000;
     private static final String SERVER_IP = "127.0.0.1";
     public static void main(String[] args) {
@@ -36,13 +37,16 @@ public class CIKeystore
             CartIdKeystore.load(null, null);
             System.out.println("*** KeyStore PKCS11 created ***");
 
-            // 2. Signature
+            // 2. Private key
             PrivateKey privateKey;
-            privateKey = (PrivateKey) CartIdKeystore.getKey(aliasClesSignatureKeystore, null);
+            privateKey = (PrivateKey) CartIdKeystore.getKey(aliasClesSignKeystore, null);
 
             // 3. Certificate
-            X509Certificate cert = (X509Certificate)CartIdKeystore.getCertificate(aliasClesSignatureKeystore);
+            X509Certificate cert = (X509Certificate)CartIdKeystore.getCertificate(aliasClesAuthKeystore);
 //            System.out.println(cert);
+
+            var chain = CartIdKeystore.getCertificateChain(aliasClesAuthKeystore);
+
             PublicKey publicKey = cert.getPublicKey();
 
             getBankAuthorization(publicKey, privateKey);
@@ -98,11 +102,13 @@ public class CIKeystore
                  | InvalidKeyException | SignatureException
                  | IOException | NoSuchAlgorithmException ex) {
             throw new RuntimeException(ex);
+        } catch (NoSuchProviderException e) {
+            throw new RuntimeException(e);
         }
 
     }
 
-    private static void decryptChallengeAndSign(PrivateKey clePrivee, String pincode, ObjectOutputStream out, String stringPubKey, String encrypted) throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException, IOException, SignatureException {
+    private static void decryptChallengeAndSign(PrivateKey clePrivee, String pincode, ObjectOutputStream out, String stringPubKey, String encrypted) throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException, IOException, SignatureException, NoSuchProviderException {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         byte[] hashBytes = digest.digest(stringPubKey.getBytes(StandardCharsets.UTF_8));
         byte[] keyBytes = Arrays.copyOf(hashBytes, 16);
@@ -110,6 +116,9 @@ public class CIKeystore
         Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
         cipher.init(Cipher.DECRYPT_MODE, key);
         byte[] plaintextBytes = cipher.doFinal(Base64.getDecoder().decode(encrypted));
+
+        Cipher cipher2 = Cipher.getInstance("AES/ECB/PKCS5Padding", "BC");
+        cipher2.init(Cipher.DECRYPT_MODE, clePrivee);
 
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream( );
         outputStream.write(plaintextBytes);
