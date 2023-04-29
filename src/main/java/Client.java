@@ -52,7 +52,10 @@ public class Client {
                 String sessionKeyAndSignature =
                         Base64.getEncoder().encodeToString(signature)
                         + "#"
-                        + Base64.getEncoder().encodeToString(sessionKey);
+                        + Base64.getEncoder().encodeToString(sessionKey)
+                        + "#"
+                        + Base64.getEncoder().encodeToString(publicKey.getEncoded())
+                        + "clientNumber";
 
                 Cipher cipher = Cipher.getInstance("ECIES", "BC");
                 cipher.init(Cipher.ENCRYPT_MODE, bankPubKey);

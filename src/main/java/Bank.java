@@ -15,6 +15,7 @@ import java.security.cert.CertificateException;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
+import java.util.Arrays;
 import java.util.Base64;
 
 public class Bank {
@@ -40,24 +41,31 @@ public class Bank {
                 System.out.println("Client connected from " + clientSocket.getInetAddress());
 
                 InputStream in = clientSocket.getInputStream();
-                ByteArrayInputStream objIn = new ByteArrayInputStream(in.readAllBytes());
-                OutputStream out = new ObjectOutputStream(clientSocket.getOutputStream());
+                ObjectInputStream objIn = new ObjectInputStream(in);
+                ObjectOutputStream out = new ObjectOutputStream(clientSocket.getOutputStream());
 
-                Object obj = objIn.read();
+                Object obj = objIn.readObject();
 
-                // Decrypt
-                Cipher cipher2 = Cipher.getInstance("ECIES", "BC");
-                cipher2.init(Cipher.DECRYPT_MODE, privateKey1);
-                byte[] decoded = Base64.getDecoder().decode((byte[]) obj);
-                byte[] messageBytes = cipher2.doFinal(decoded);
-                String message = new String(messageBytes);
-                System.out.println(message);
+                if (obj instanceof String str) {
+                    // Decrypt
+                    Cipher cipher2 = Cipher.getInstance("ECIES", "BC");
+                    cipher2.init(Cipher.DECRYPT_MODE, privateKey1);
+                    byte[] decoded = Base64.getDecoder().decode(((String) obj).getBytes(StandardCharsets.UTF_8));
+                    byte[] messageBytes = cipher2.doFinal(decoded);
+                    String message = new String(messageBytes);
+                    byte[] signature = Base64.getDecoder().decode(message.split("#")[0]);
+                    byte[] sessionKey = Base64.getDecoder().decode(message.split("#")[1]);
+                    byte[] clientPubKey = Base64.getDecoder().decode(message.split("#")[2]);
+
+
+                }
+
 
                 objIn.close();
                 in.close();
                 clientSocket.close();
             }
-        } catch (IOException e) {
+        } catch (IOException | ClassNotFoundException e) {
             System.out.println(e.getMessage());
         } catch (UnrecoverableKeyException e) {
             throw new RuntimeException(e);
