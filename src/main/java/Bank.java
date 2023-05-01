@@ -1,4 +1,6 @@
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import utils.RandomChallengeGenerator;
 
 import javax.crypto.BadPaddingException;
@@ -23,26 +25,30 @@ import static utils.CryptoUtil.decryptStringWithAES;
 import static utils.CryptoUtil.encryptStringWithAES;
 
 public class Bank {
-    private static int port = 5000;
+    private static final int PORT = 5000;
     private static final String CERT_PASSWD = "dalgov";
+    private static final String KEY_STORE_PATH = "src/main/certs/keystore.jks";
+    private static final String PROVIDER = "BC";
+    private static final String KEY_ALGORITHM = "EC";
+    private static final String CIPHER_ALGORITHM = "ECIES";
+    private static final String SIGNATURE_ALGORITHM = "SHA384withECDSA";
+    private static final Logger LOGGER = LoggerFactory.getLogger(Bank.class);
 
     public static void main(String[] args) throws SignatureException {
 
-        try {
-            ServerSocket serverSocket = new ServerSocket(port);
-            System.out.println("Server started on port " + port);
-            Security.addProvider(new BouncyCastleProvider());
+        try (ServerSocket serverSocket = new ServerSocket(PORT);
+             FileInputStream keyStoreStream = new FileInputStream(KEY_STORE_PATH)) {
+            LOGGER.info("Server started on port {}", PORT);
 
+            Security.addProvider(new BouncyCastleProvider());
             KeyStore keyStore = KeyStore.getInstance("PKCS12");
-            FileInputStream fis = new FileInputStream("src/main/certs/keystore.jks");
-            keyStore.load(fis, CERT_PASSWD.toCharArray());
-            Certificate bankCert = keyStore.getCertificate("beid");
-            PublicKey bankPubKey = bankCert.getPublicKey();
-            PrivateKey privateKey1 = (PrivateKey) keyStore.getKey("beid", CERT_PASSWD.toCharArray());
+            keyStore.load(keyStoreStream, CERT_PASSWD.toCharArray());
+            PrivateKey privateKey = (PrivateKey) keyStore.getKey("beid", CERT_PASSWD.toCharArray());
+
 
             while (true) {
                 Socket clientSocket = serverSocket.accept();
-                System.out.println("Client connected from " + clientSocket.getInetAddress());
+                LOGGER.info("Client connected from " + clientSocket.getInetAddress());
 
                 ObjectOutputStream out = new ObjectOutputStream(clientSocket.getOutputStream());
                 InputStream in = clientSocket.getInputStream();
@@ -50,40 +56,42 @@ public class Bank {
                 Object inputStream = objIn.readObject();
 
                 if (inputStream instanceof String) {
-                    // Decrypt and extract Signature, Session Key and Client's EID Public Key
-                    Cipher cipher2 = Cipher.getInstance("ECIES", "BC");
-                    cipher2.init(Cipher.DECRYPT_MODE, privateKey1);
+                    // 1. Decrypt and extract Signature, Session Key and Client's EID Public Key
+                    Cipher cipher = Cipher.getInstance("ECIES", "BC");
+                    cipher.init(Cipher.DECRYPT_MODE, privateKey);
                     byte[] decoded = Base64.getDecoder().decode(((String) inputStream).getBytes(StandardCharsets.UTF_8));
-                    byte[] messageBytes = cipher2.doFinal(decoded);
+                    byte[] messageBytes = cipher.doFinal(decoded);
                     String message = new String(messageBytes);
                     byte[] signature = Base64.getDecoder().decode(message.split("#")[0]);
                     byte[] sessionKey = Base64.getDecoder().decode(message.split("#")[1]);
                     byte[] clientPubKeyBytes = Base64.getDecoder().decode(message.split("#")[2]);
                     X509EncodedKeySpec keySpec = new X509EncodedKeySpec(clientPubKeyBytes);
                     KeyFactory keyFactory = KeyFactory.getInstance("EC");
-                    ECPublicKey ecPublicKey = (ECPublicKey) keyFactory.generatePublic(keySpec);
+                    ECPublicKey clientPubKey = (ECPublicKey) keyFactory.generatePublic(keySpec);
 
-                    // Verify if the signature is valid
-                    if (!checkSignatureValid(ecPublicKey, signature, sessionKey)) {
-                        //TODO
-                        //Stop the process, signature invalid
+                    // 2. Verify if the signature is valid
+                    if (!checkSignatureValid(clientPubKey, signature, sessionKey)) {
+                        LOGGER.error("Invalid signature, closing connection with client");
+                        clientSocket.close();
+                        continue;
                     }
 
                     out.writeObject(encryptStringWithAES("CLIENT_NUMBER_REQUEST", sessionKey));
                     out.flush();
 
-                    // Retrieve client number
+                    // 3. Ask client's number
                     inputStream = objIn.readObject();
 
                     //Here you do all the stuff involved with fecthing the user in the DB, checking if he exists, if the number is valid etc...
                     // ...
 
-                    // Generate random challenge and send it to client
+                    // 4. Generate random challenge and send it to client
                     byte[] challenge = RandomChallengeGenerator.generateRandomChallenge(32);
                     String encodedChallenge = Base64.getEncoder().encodeToString(challenge);
                     out.writeObject(encryptStringWithAES(encodedChallenge, sessionKey));
                     out.flush();
 
+                    // 5. Verify challenge's signature and PIN
                     inputStream = decryptStringWithAES((byte[]) objIn.readObject(), sessionKey);
 
                     byte[] signedChallenge = Base64.getDecoder().decode((String) ((String) inputStream).split("#")[0]);
@@ -91,7 +99,7 @@ public class Bank {
 
                     //TODO verify user's PIN
 
-                    if (checkSignatureValid(ecPublicKey, signedChallenge, challenge)) {
+                    if (checkSignatureValid(clientPubKey, signedChallenge, challenge)) {
                         out.writeObject(encryptStringWithAES("OK", sessionKey));
                         out.flush();
                     } else {
@@ -104,28 +112,10 @@ public class Bank {
                 in.close();
                 clientSocket.close();
             }
-        } catch (IOException | ClassNotFoundException e) {
-            System.out.println(e.getMessage());
-        } catch (UnrecoverableKeyException e) {
-            throw new RuntimeException(e);
-        } catch (NoSuchPaddingException e) {
-            throw new RuntimeException(e);
-        } catch (IllegalBlockSizeException e) {
-            throw new RuntimeException(e);
-        } catch (CertificateException e) {
-            throw new RuntimeException(e);
-        } catch (KeyStoreException e) {
-            throw new RuntimeException(e);
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException(e);
-        } catch (BadPaddingException e) {
-            throw new RuntimeException(e);
-        } catch (NoSuchProviderException e) {
-            throw new RuntimeException(e);
-        } catch (InvalidKeyException e) {
-            throw new RuntimeException(e);
-        } catch (InvalidKeySpecException e) {
-            throw new RuntimeException(e);
+        } catch (IOException | ClassNotFoundException | UnrecoverableKeyException | NoSuchPaddingException |
+                 IllegalBlockSizeException | CertificateException | KeyStoreException | NoSuchAlgorithmException |
+                 BadPaddingException | NoSuchProviderException | InvalidKeyException | InvalidKeySpecException e) {
+            LOGGER.error(e.getMessage());
         }
 
     }
