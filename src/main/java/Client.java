@@ -28,7 +28,7 @@ public class Client {
     private static final int SESSION_KEY_LENGTH = 32;
     private static final String ENCRYPTION_ALGORITHM = "ECIES";
     private static final String ENCRYPTION_PROVIDER = "BC";
-    private static final Logger LOGGER = LoggerFactory.getLogger(Bank.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(Client.class);
 
 
     public static void main(String[] args) {
