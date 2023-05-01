@@ -1,4 +1,6 @@
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.security.*;
@@ -6,12 +8,14 @@ import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 
-public class EIDKeystoreManager {
+public class EIDCardManager {
     private static final String configPath = "C:\\tmp\\pkcs11.cfg";
     private static final String aliasClesAuthKeystore = "Authentication";
     private KeyStore keystore;
+    private static final Logger LOGGER = LoggerFactory.getLogger(EIDCardManager.class);
 
-    public EIDKeystoreManager() {
+
+    public EIDCardManager() {
         Security.setProperty("crypto.policy", "unlimited");
         Security.addProvider(new BouncyCastleProvider());
 
@@ -23,7 +27,8 @@ public class EIDKeystoreManager {
             keystore = KeyStore.getInstance("PKCS11");
             keystore.load(null, null);
         } catch (KeyStoreException | NoSuchAlgorithmException | CertificateException | IOException ex) {
-            System.out.println(ex.getMessage());
+            LOGGER.error(ex.getMessage());
+            keystore = null;
         }
     }
 
@@ -31,7 +36,7 @@ public class EIDKeystoreManager {
         try {
             return (X509Certificate)keystore.getCertificate(aliasClesAuthKeystore);
         } catch (KeyStoreException ex) {
-            System.out.println(ex.getMessage());
+            LOGGER.error("Certificate not found");
             return null;
         }
     }
@@ -40,7 +45,7 @@ public class EIDKeystoreManager {
         try {
             return keystore.getCertificateChain(aliasClesAuthKeystore);
         } catch (KeyStoreException ex) {
-            System.out.println(ex.getMessage());
+            LOGGER.error("Public key not found");
             return null;
         }
     }
@@ -49,7 +54,7 @@ public class EIDKeystoreManager {
         try {
             return getCertificate().getPublicKey();
         } catch (NullPointerException ex) {
-            System.out.println("Certificate not found");
+            LOGGER.error("Certificate not found");
             return null;
         }
     }
@@ -58,7 +63,7 @@ public class EIDKeystoreManager {
         try {
             return (PrivateKey) keystore.getKey(aliasClesAuthKeystore, null);
         } catch (KeyStoreException | NoSuchAlgorithmException | UnrecoverableKeyException ex) {
-            System.out.println(ex.getMessage());
+            LOGGER.error("Private key not found");
             return null;
         }
     }

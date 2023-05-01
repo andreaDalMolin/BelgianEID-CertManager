@@ -31,12 +31,28 @@ public class Client {
     private static final Logger LOGGER = LoggerFactory.getLogger(Client.class);
 
 
-    public static void main(String[] args) {
-        EIDKeystoreManager keyStore = new EIDKeystoreManager();
-        X509Certificate cert = keyStore.getCertificate();
-        PublicKey publicKey = keyStore.getPublicKey();
-        PrivateKey privateKey = keyStore.getPrivateKey();
-        Certificate[] certificateChain = keyStore.getCertificateChain();
+    public static void main(String[] args) throws InterruptedException {
+        EIDCardManager eidCard;
+        PublicKey publicKey = null;
+        PrivateKey privateKey = null;
+//        X509Certificate cert = null;
+//        Certificate[] certificateChain = null;
+        boolean cardIsLoaded = false;
+
+        while (!cardIsLoaded) {
+            try {
+                eidCard = new EIDCardManager();
+                publicKey = eidCard.getPublicKey();
+                privateKey = eidCard.getPrivateKey();
+//                cert = eidCard.getCertificate();
+//                certificateChain = eidCard.getCertificateChain();
+                cardIsLoaded = true;
+                LOGGER.error("Card detected !");
+            } catch (Exception e) {
+                LOGGER.error("No card detected");
+                Thread.sleep(1000);
+            }
+        }
 
         getBankAuthorization(publicKey, privateKey);
     }
